@@ -32,7 +32,7 @@ DEFAULT_TEMPLATE = (
 )
 
 
-@register("astrbot_plugin_redalert", "dafeiyu", "QQ 红包提醒", "1.0.0")
+@register("astrbot_plugin_redalert", "dafeiyu", "QQ 红包提醒", "1.2.1")
 class QQRedAlert(Star):
     def __init__(self, context: Context, config: AstrBotConfig | dict | None = None):
         super().__init__(context)

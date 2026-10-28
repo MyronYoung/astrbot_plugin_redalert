@@ -1,5 +1,6 @@
 ## 1.2.1
 
+- 同步 `@register` 版本号为 1.2.1
 - 市场简介补充 NapCat `walletElement` 补丁要求
 - 避免用户安装原版 NapCat 后收不到提醒
 
