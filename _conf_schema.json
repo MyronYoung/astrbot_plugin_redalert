@@ -38,5 +38,15 @@
     "description": "提醒模板",
     "type": "text",
     "default": "💰 红包提醒\n群：{group_name}（{group_id}）\n发送者：{sender_name}（{sender_id}）\n时间：{time}\n快去抢！"
+  },
+  "group_thanks_enabled": {
+    "description": "检测到可领取红包后，在群里发感谢",
+    "type": "bool",
+    "default": true
+  },
+  "group_thanks_template": {
+    "description": "群感谢模板",
+    "type": "text",
+    "default": "谢谢 {sender_name} 的红包！鱼鱼收下这份投喂啦～"
   }
 }

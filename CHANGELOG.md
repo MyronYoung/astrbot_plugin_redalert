@@ -1,3 +1,9 @@
+## 1.2.0
+
+- 检测到可领取红包后，额外在原群发一条感谢消息
+- 感谢模板支持 `{sender_name}`、`{sender_id}`、`{group_name}`、`{group_id}`
+- 私聊提醒与群感谢相互独立，群发失败不影响提醒
+
 ## 1.1.0
 
 - 支持 NapCat `walletElement` 红包 JSON（需协议端补丁）

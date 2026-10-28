@@ -1,6 +1,6 @@
 # QQ 红包提醒
 
-白名单群出现 QQ 红包时，**只私聊提醒主人**。不领取、不在群里发言、不调用 LLM，零 token 成本。
+白名单群出现可领取的 QQ 红包时，**先私聊提醒主人，再在原群发一句感谢**。不领取、不调用 LLM，零 token 成本。
 
 ## 为什么做这个
 
@@ -15,7 +15,7 @@ QQ 红包的“领取”是 QQ 客户端原生动作（`nodeIKernelMsgService/gr
 - 监听指定群的红包消息
 - 只认 **`[QQ红包]` 固定文本** 或 **json/xml 红包卡片**，普通聊天提到“红包”不会误触发
 - 已领完/已过期/来晚/口令红包默认不提醒；专属红包只在明确指向本机 QQ 时提醒
-- 只私聊通知主人，不在群里发消息
+- 私聊通知主人，并在原群发一句带发送者名字的感谢
 - 支持多个接收人
 - 同一红包 10 秒内只提醒一次
 - 优先 NapCat 私聊，失败自动回退 AstrBot 会话
@@ -43,6 +43,8 @@ QQ 红包的“领取”是 QQ 客户端原生动作（`nodeIKernelMsgService/gr
 | `owner_id` | string | 单个接收 QQ（兼容旧配置） |
 | `owner_ids` | list | 多个接收 QQ，优先使用 |
 | `watch_groups` | list | 监听的群号，留空不监听 |
+| `group_thanks_enabled` | bool | 是否在原群发感谢 |
+| `group_thanks_template` | text | 群感谢模板 |
 | `notify_template` | text | 私聊模板，支持 `{group_name}`、`{group_id}`、`{sender_name}`、`{sender_id}`、`{time}` |
 
 示例：
@@ -104,7 +106,7 @@ python tools/patch_napcat_wallet.py "D:\\AstrBot\\napcat\\napcat\\napcat.mjs"
 ## 不做什么
 
 - **不自动领取红包**：当前 NapCat 没有稳定的 `grabRedBag` OneBot action；自动领取需要改 QQ 客户端底层，风险高，本项目不做。
-- **不在群里发言**：避免刷屏和暴露提醒逻辑。
+- **不刷屏**：只在检测到可领取红包时发一条感谢，其他时间不发言。
 - **不调用 LLM**：不产生 token 费用。
 
 ## 隐私

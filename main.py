@@ -13,6 +13,7 @@ import json
 import re
 import sys
 import time
+import asyncio
 from datetime import datetime
 
 from astrbot.api import AstrBotConfig, logger
@@ -55,6 +56,11 @@ class QQRedAlert(Star):
             groups = re.split(r"[,;\s]+", groups)
         self.watch_groups = {str(g).strip() for g in groups if str(g).strip()}
         self.template = str(self.conf.get("notify_template") or DEFAULT_TEMPLATE).replace("\\n", "\n")
+        self.group_thanks = bool(self.conf.get("group_thanks_enabled", True))
+        self.group_thanks_template = str(
+            self.conf.get("group_thanks_template")
+            or "谢谢 {sender_name} 的红包！鱼鱼收下这份投喂啦～"
+        ).replace("\\n", "\n")
         self.seen: dict[str, float] = {}
         if not self.owner_ids:
             logger.warning("[redalert] 未配置 owner_id / owner_ids，红包提醒不会发送")
@@ -239,6 +245,31 @@ class QQRedAlert(Star):
                 logger.error(f"[redalert] 私聊 {owner} 失败: {e}")
         return False
 
+    async def _send_group_thanks(self, event, gid: str, sender_name: str, group_name: str) -> bool:
+        if not self.group_thanks:
+            return False
+        text = self.group_thanks_template.format(
+            sender_name=sender_name,
+            sender_id=event.get_sender_id(),
+            group_name=group_name or "本群",
+            group_id=gid,
+        )
+        try:
+            await event.bot.api.call_action(
+                "send_group_msg",
+                group_id=int(gid),
+                message=text,
+            )
+            return True
+        except Exception as e:
+            logger.debug(f"[redalert] NapCat 群发感谢失败: {e}")
+        try:
+            await event.send(MessageChain([Plain(text)]))
+            return True
+        except Exception as e:
+            logger.error(f"[redalert] 群发感谢失败: {e}")
+            return False
+
     @filter.event_message_type(EventMessageType.ALL, priority=sys.maxsize - 5)
     async def on_message(self, event):
         if not self.enabled:
@@ -279,15 +310,22 @@ class QQRedAlert(Star):
                     group_name = g.group_name or ""
             except Exception:
                 pass
+            sender_name = event.get_sender_name() or "未知"
             text = self.template.format(
                 group_name=group_name or "未知群",
                 group_id=gid,
-                sender_name=event.get_sender_name() or "未知",
+                sender_name=sender_name,
                 sender_id=sender,
                 time=datetime.now().strftime("%H:%M:%S"),
             )
             ok = await self._send_owner(event, text)
             logger.info(f"[redalert] 群 {gid} 发现红包，提醒{'成功' if ok else '失败'}")
+            try:
+                await asyncio.sleep(1.0)
+                thanked = await self._send_group_thanks(event, gid, sender_name, group_name)
+                logger.info(f"[redalert] 群 {gid} 感谢{'成功' if thanked else '未发送/失败'}")
+            except Exception as e:
+                logger.error(f"[redalert] 群感谢异常: {e}")
         except Exception as e:
             logger.error(f"[redalert] 处理红包消息失败: {e}")
 
