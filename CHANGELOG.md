@@ -1,3 +1,10 @@
+## 1.1.0
+
+- 支持 NapCat `walletElement` 红包 JSON（需协议端补丁）
+- 按真实字段判断可领取：`grabState=0`、`grabbedAmount=0`
+- `grapUin` 明确包含本机 QQ 时才提醒；避免提醒只能别人领的专属红包
+- 清理临时调试命令
+
 ## 1.0.3
 
 - 安全修复：`_is_owner` 不再对非 QQ 平台默认放行

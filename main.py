@@ -14,7 +14,6 @@ import re
 import sys
 import time
 from datetime import datetime
-from pathlib import Path
 
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import MessageChain, filter
@@ -81,6 +80,11 @@ class QQRedAlert(Star):
     @staticmethod
     def _has_red_marker(blob: str) -> bool:
         b = (blob or "").lower()
+        if "__napcat_wallet" in b:
+            return any(
+                k in b
+                for k in ("redchannel", "billno", "pcbody", "redbag", "redpacket", "grab")
+            )
         return any(
             k in b
             for k in (
@@ -138,6 +142,35 @@ class QQRedAlert(Star):
             pass
         return "\n".join(parts)
 
+    def _extract_wallet(self, event):
+        for seg in self._raw_segments(event):
+            try:
+                if not isinstance(seg, dict) or str(seg.get("type", "")).lower() != "json":
+                    continue
+                data = seg.get("data", {})
+                payload = data.get("data") if isinstance(data, dict) else data
+                if not isinstance(payload, str):
+                    continue
+                obj = json.loads(payload)
+                if isinstance(obj, dict) and obj.get("__napcat_wallet"):
+                    return obj
+            except Exception:
+                continue
+        try:
+            for comp in event.get_messages():
+                d = comp.toDict() if hasattr(comp, "toDict") else {}
+                if str(d.get("type", "")).lower() != "json":
+                    continue
+                data = d.get("data", {})
+                payload = data.get("data") if isinstance(data, dict) else data
+                if isinstance(payload, str):
+                    obj = json.loads(payload)
+                    if isinstance(obj, dict) and obj.get("__napcat_wallet"):
+                        return obj
+        except Exception:
+            pass
+        return None
+
     def _is_claimable(self, event, msg: str) -> bool:
         blob = self._event_blob(event, msg).lower()
         # 已领完 / 过期 / 来晚
@@ -147,7 +180,30 @@ class QQRedAlert(Star):
         if not self.allow_password:
             if "口令" in blob or '"redchannel": 32' in blob or '"redchannel":32' in blob:
                 return False
-        # 专属红包：只有明确指向本机 QQ 才提醒，避免提醒“只能别人领”的红包
+
+        wallet = self._extract_wallet(event)
+        if wallet:
+            receiver = wallet.get("receiver") or {}
+            content = str(receiver.get("content", "")) + str(receiver.get("notice", ""))
+            if "红包" not in content:
+                return False
+            try:
+                if int(wallet.get("grabState", 0) or 0) != 0:
+                    return False
+            except Exception:
+                return False
+            amount = str(wallet.get("grabbedAmount", "0") or "0")
+            if amount not in ("0", "0.0"):
+                return False
+            grap = wallet.get("grapUin") or []
+            if isinstance(grap, (str, int)):
+                grap = [grap]
+            grap = [str(x).strip() for x in grap if str(x).strip()]
+            if grap and (not self.bot_qq or self.bot_qq not in grap):
+                return False
+            return True
+
+        # 非 NapCat 钱包结构：退回通用过滤
         if "专属" in blob:
             if not self.bot_qq or self.bot_qq not in blob:
                 return False
@@ -183,19 +239,6 @@ class QQRedAlert(Star):
                 logger.error(f"[redalert] 私聊 {owner} 失败: {e}")
         return False
 
-    async def _probe_empty(self, event):
-        try:
-            mid = getattr(event.message_obj, "message_id", None)
-            logger.info(
-                f"[redalert][debug] empty message id={mid!r} "
-                f"obj={str(event.message_obj)[:800]!r}"
-            )
-            if mid:
-                raw = await event.bot.api.call_action("get_msg", message_id=int(mid))
-                logger.info(f"[redalert][debug] get_msg={str(raw)[:1800]!r}")
-        except Exception as e:
-            logger.info(f"[redalert][debug] get_msg failed: {e}")
-
     @filter.event_message_type(EventMessageType.ALL, priority=sys.maxsize - 5)
     async def on_message(self, event):
         if not self.enabled:
@@ -203,8 +246,6 @@ class QQRedAlert(Star):
         try:
             msg = event.message_str or ""
             gid0 = str(event.get_group_id() or "")
-            if not msg and self.debug and gid0 in self.watch_groups:
-                await self._probe_empty(event)
             if self.debug and gid0 in self.watch_groups:
                 logger.info(
                     f"[redalert][debug] gid={gid0} text={msg[:80]!r} "
@@ -249,54 +290,6 @@ class QQRedAlert(Star):
             logger.info(f"[redalert] 群 {gid} 发现红包，提醒{'成功' if ok else '失败'}")
         except Exception as e:
             logger.error(f"[redalert] 处理红包消息失败: {e}")
-
-    def _aiocqhttp_bot(self):
-        try:
-            for p in self.context.platform_manager.platform_insts:
-                try:
-                    if p.meta().name == "aiocqhttp":
-                        return getattr(p, "bot", None)
-                except Exception:
-                    continue
-        except Exception:
-            pass
-        return None
-
-    @filter.command("红包拉历史")
-    async def history_cmd(self, event):
-        if not self._is_owner(event):
-            yield event.plain_result("这个只有主人能看。")
-            return
-        bot = self._aiocqhttp_bot()
-        if not bot:
-            yield event.plain_result("找不到 aiocqhttp 连接。")
-            return
-        gid = "688724840"
-        try:
-            data = await bot.api.call_action(
-                "get_group_msg_history", group_id=int(gid), count=30
-            )
-            probes = {}
-            for m in (data.get("messages") or []):
-                if m.get("message"):
-                    continue
-                mid = m.get("message_id")
-                if not mid:
-                    continue
-                try:
-                    probes[str(mid)] = await bot.api.call_action(
-                        "get_msg", message_id=int(mid)
-                    )
-                except Exception as e:
-                    probes[str(mid)] = {"error": str(e)}
-            path = Path.cwd() / "data" / "redalert_history.json"
-            path.write_text(
-                json.dumps({"history": data, "probes": probes}, ensure_ascii=False, indent=2),
-                "utf-8",
-            )
-            yield event.plain_result(f"已拉取群 {gid} 最近消息到 {path}")
-        except Exception as e:
-            yield event.plain_result(f"拉取失败：{e}")
 
     @filter.command("红包测试")
     async def test_cmd(self, event):

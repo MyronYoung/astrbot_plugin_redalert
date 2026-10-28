@@ -67,6 +67,28 @@ QQ 红包的“领取”是 QQ 客户端原生动作（`nodeIKernelMsgService/gr
 > 权限只按 `owner_id` / `owner_ids` 判断，与消息平台无关；非主人无法使用 `/红包测试`、`/红包状态`。
 
 
+
+## NapCat 说明
+
+NapCat 4.9.99 原生不会把 `walletElement` 转成 OneBot 段，真实红包会变成空消息。要使用本插件，需要协议端把 `walletElement` 作为 `json` 段上报（本机已验证的补丁方案）。
+
+插件按红包 JSON 的真实字段判断：
+
+- `receiver.content` 包含“红包”
+- `grabState == 0`（未领）
+- `grabbedAmount == "0"`
+- `grapUin` 为空，或包含配置的 `bot_qq`
+
+没有该补丁的 NapCat 不会触发提醒，也不会误报。
+
+补丁脚本：
+
+```bash
+python tools/patch_napcat_wallet.py "D:\\AstrBot\\napcat\\napcat\\napcat.mjs"
+```
+
+脚本会先备份为 `napcat.mjs.bak-redalert`，重启 NapCat 后生效。
+
 ## 已知限制
 
 - 本插件需要协议端把红包上报为 **`json` / `xml` 红包卡片**，或 `[QQ红包]` 文本。
