@@ -15,7 +15,7 @@ desc: |
   - 提供 `/红包测试`、`/红包状态` 管理命令
 version: 1.0.0
 author: dafeiyu
-repo: https://github.com/your-name/astrbot_plugin_redalert
+repo: https://github.com/MyronYoung/astrbot_plugin_redalert
 astrbot_version: ">=4.5.0"
 support_platforms:
   - aiocqhttp
