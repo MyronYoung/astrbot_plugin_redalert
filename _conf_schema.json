@@ -4,23 +4,38 @@
     "type": "bool",
     "default": true
   },
+  "debug": {
+    "description": "调试模式",
+    "type": "bool",
+    "default": false
+  },
+  "bot_qq": {
+    "description": "机器人QQ",
+    "type": "string",
+    "default": ""
+  },
+  "allow_password_redpacket": {
+    "description": "提醒口令红包",
+    "type": "bool",
+    "default": false
+  },
   "owner_id": {
-    "description": "接收提醒的 QQ 号（单个，兼容旧配置）",
+    "description": "接收提醒的QQ",
     "type": "string",
     "default": ""
   },
   "owner_ids": {
-    "description": "接收提醒的 QQ 号列表（可填多个）",
-    "type": "list",
-    "default": []
+    "description": "接收提醒的QQ列表，逗号分隔",
+    "type": "string",
+    "default": ""
   },
   "watch_groups": {
-    "description": "监听的群号列表；留空则不监听任何群",
-    "type": "list",
-    "default": []
+    "description": "监听群号，逗号分隔",
+    "type": "string",
+    "default": ""
   },
   "notify_template": {
-    "description": "私聊提醒模板",
+    "description": "提醒模板",
     "type": "text",
     "default": "💰 红包提醒\n群：{group_name}（{group_id}）\n发送者：{sender_name}（{sender_id}）\n时间：{time}\n快去抢！"
   }

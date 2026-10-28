@@ -10,9 +10,11 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import MessageChain, filter
@@ -36,11 +38,22 @@ class QQRedAlert(Star):
         super().__init__(context)
         self.conf = config or {}
         self.enabled = bool(self.conf.get("enabled", True))
+        self.debug = bool(self.conf.get("debug", False))
+        self.bot_qq = str(self.conf.get("bot_qq", "") or "").strip()
+        self.allow_password = bool(self.conf.get("allow_password_redpacket", False))
+        ex = self.conf.get("exclude_keywords") or ["已领完", "已过期", "手慢了", "来晚了"]
+        if isinstance(ex, str):
+            ex = re.split(r"[,;\s]+", ex)
+        self.exclude_keywords = [str(x) for x in ex if str(x).strip()]
         owners = self.conf.get("owner_ids") or []
+        if isinstance(owners, str):
+            owners = re.split(r"[,;\s]+", owners)
         if not owners and self.conf.get("owner_id"):
             owners = [self.conf.get("owner_id")]
         self.owner_ids = [str(x).strip() for x in owners if str(x).strip()]
         groups = self.conf.get("watch_groups") or []
+        if isinstance(groups, str):
+            groups = re.split(r"[,;\s]+", groups)
         self.watch_groups = {str(g).strip() for g in groups if str(g).strip()}
         self.template = str(self.conf.get("notify_template") or DEFAULT_TEMPLATE).replace("\\n", "\n")
         self.seen: dict[str, float] = {}
@@ -51,10 +64,7 @@ class QQRedAlert(Star):
 
     def _is_owner(self, event) -> bool:
         try:
-            if str(event.get_sender_id()) in self.owner_ids:
-                return True
-            pn = (event.get_platform_name() or "").lower()
-            return "aiocqhttp" not in pn and "qq" not in pn
+            return str(event.get_sender_id()) in self.owner_ids
         except Exception:
             return False
 
@@ -68,28 +78,80 @@ class QQRedAlert(Star):
             if isinstance(msg, list):
                 yield from msg
 
+    @staticmethod
+    def _has_red_marker(blob: str) -> bool:
+        b = (blob or "").lower()
+        return any(
+            k in b
+            for k in (
+                "com.tencent.mobileqq.redpacket",
+                "redpacket",
+                "redbag",
+                "red_bag",
+                "qredpacket",
+                "grabredbag",
+            )
+        )
+
     def _is_red_packet(self, event, msg: str) -> bool:
-        if "QQ红包" in msg:
+        text = (msg or "").strip()
+        # 只认 QQ 红包的固定展示文本，不认普通聊天里的“红包”两个字
+        if text in ("[QQ红包]", "QQ红包") or text.startswith("[QQ红包]"):
             return True
-        # 有些客户端的红包是 json/xml 卡片，文本里不一定带 QQ红包
+        # 真正的红包卡片：只检查 json/xml 结构里的红包标记
         for seg in self._raw_segments(event):
             try:
-                data = seg.get("data", {}) if isinstance(seg, dict) else {}
-                blob = json.dumps(data, ensure_ascii=False).lower()
-                if any(k in blob for k in ("redpacket", "redbag", "红包")):
+                if not isinstance(seg, dict):
+                    continue
+                if str(seg.get("type", "")).lower() not in ("json", "xml"):
+                    continue
+                data = seg.get("data", {})
+                if self._has_red_marker(json.dumps(data, ensure_ascii=False)):
                     return True
             except Exception:
                 continue
         try:
             for comp in event.get_messages():
                 d = comp.toDict() if hasattr(comp, "toDict") else {}
-                if d.get("type") in ("json", "xml"):
-                    blob = json.dumps(d, ensure_ascii=False).lower()
-                    if any(k in blob for k in ("redpacket", "redbag", "红包")):
+                if str(d.get("type", "")).lower() in ("json", "xml"):
+                    if self._has_red_marker(json.dumps(d, ensure_ascii=False)):
                         return True
         except Exception:
             pass
+        if self.debug and "红包" in text and not text.startswith("/"):
+            raw = str(getattr(event.message_obj, "raw_message", ""))[:500]
+            logger.info(f"[redalert] 未识别为红包卡片: text={text[:80]!r} raw={raw!r}")
         return False
+
+    def _event_blob(self, event, msg: str) -> str:
+        parts = [msg or ""]
+        for seg in self._raw_segments(event):
+            try:
+                parts.append(json.dumps(seg, ensure_ascii=False))
+            except Exception:
+                parts.append(str(seg))
+        try:
+            for comp in event.get_messages():
+                d = comp.toDict() if hasattr(comp, "toDict") else {}
+                parts.append(json.dumps(d, ensure_ascii=False))
+        except Exception:
+            pass
+        return "\n".join(parts)
+
+    def _is_claimable(self, event, msg: str) -> bool:
+        blob = self._event_blob(event, msg).lower()
+        # 已领完 / 过期 / 来晚
+        if any(k.lower() in blob for k in self.exclude_keywords):
+            return False
+        # 口令红包：默认不提醒，除非显式允许
+        if not self.allow_password:
+            if "口令" in blob or '"redchannel": 32' in blob or '"redchannel":32' in blob:
+                return False
+        # 专属红包：只有明确指向本机 QQ 才提醒，避免提醒“只能别人领”的红包
+        if "专属" in blob:
+            if not self.bot_qq or self.bot_qq not in blob:
+                return False
+        return True
 
     def _dedup(self, key: str) -> bool:
         now = time.time()
@@ -121,12 +183,33 @@ class QQRedAlert(Star):
                 logger.error(f"[redalert] 私聊 {owner} 失败: {e}")
         return False
 
+    async def _probe_empty(self, event):
+        try:
+            mid = getattr(event.message_obj, "message_id", None)
+            logger.info(
+                f"[redalert][debug] empty message id={mid!r} "
+                f"obj={str(event.message_obj)[:800]!r}"
+            )
+            if mid:
+                raw = await event.bot.api.call_action("get_msg", message_id=int(mid))
+                logger.info(f"[redalert][debug] get_msg={str(raw)[:1800]!r}")
+        except Exception as e:
+            logger.info(f"[redalert][debug] get_msg failed: {e}")
+
     @filter.event_message_type(EventMessageType.ALL, priority=sys.maxsize - 5)
     async def on_message(self, event):
         if not self.enabled:
             return
         try:
             msg = event.message_str or ""
+            gid0 = str(event.get_group_id() or "")
+            if not msg and self.debug and gid0 in self.watch_groups:
+                await self._probe_empty(event)
+            if self.debug and gid0 in self.watch_groups:
+                logger.info(
+                    f"[redalert][debug] gid={gid0} text={msg[:80]!r} "
+                    f"raw={self._event_blob(event, msg)[:1800]!r}"
+                )
             if not self._is_red_packet(event, msg):
                 return
             gid = str(event.get_group_id() or "")
@@ -135,6 +218,13 @@ class QQRedAlert(Star):
             sender = str(event.get_sender_id() or "")
             if sender == str(event.get_self_id() or ""):
                 return
+            if not self._is_claimable(event, msg):
+                if self.debug:
+                    logger.info(f"[redalert] 红包不可领取/非本机专属，跳过: {msg[:60]!r}")
+                return
+            if self.debug:
+                blob = self._event_blob(event, msg)[:1200]
+                logger.info(f"[redalert] 命中红包卡片 text={msg[:60]!r} raw={blob!r}")
 
             mid = str(getattr(event.message_obj, "message_id", "") or "")
             key = f"{gid}:{mid}:{sender}:{msg[:20]}"
@@ -159,6 +249,54 @@ class QQRedAlert(Star):
             logger.info(f"[redalert] 群 {gid} 发现红包，提醒{'成功' if ok else '失败'}")
         except Exception as e:
             logger.error(f"[redalert] 处理红包消息失败: {e}")
+
+    def _aiocqhttp_bot(self):
+        try:
+            for p in self.context.platform_manager.platform_insts:
+                try:
+                    if p.meta().name == "aiocqhttp":
+                        return getattr(p, "bot", None)
+                except Exception:
+                    continue
+        except Exception:
+            pass
+        return None
+
+    @filter.command("红包拉历史")
+    async def history_cmd(self, event):
+        if not self._is_owner(event):
+            yield event.plain_result("这个只有主人能看。")
+            return
+        bot = self._aiocqhttp_bot()
+        if not bot:
+            yield event.plain_result("找不到 aiocqhttp 连接。")
+            return
+        gid = "688724840"
+        try:
+            data = await bot.api.call_action(
+                "get_group_msg_history", group_id=int(gid), count=30
+            )
+            probes = {}
+            for m in (data.get("messages") or []):
+                if m.get("message"):
+                    continue
+                mid = m.get("message_id")
+                if not mid:
+                    continue
+                try:
+                    probes[str(mid)] = await bot.api.call_action(
+                        "get_msg", message_id=int(mid)
+                    )
+                except Exception as e:
+                    probes[str(mid)] = {"error": str(e)}
+            path = Path.cwd() / "data" / "redalert_history.json"
+            path.write_text(
+                json.dumps({"history": data, "probes": probes}, ensure_ascii=False, indent=2),
+                "utf-8",
+            )
+            yield event.plain_result(f"已拉取群 {gid} 最近消息到 {path}")
+        except Exception as e:
+            yield event.plain_result(f"拉取失败：{e}")
 
     @filter.command("红包测试")
     async def test_cmd(self, event):

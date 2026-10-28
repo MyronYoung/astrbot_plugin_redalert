@@ -13,7 +13,7 @@ desc: |
   - 同一红包 10 秒内只提醒一次
   - 支持自定义提醒模板
   - 提供 `/红包测试`、`/红包状态` 管理命令
-version: 1.0.0
+version: 1.0.3
 author: dafeiyu
 repo: https://github.com/MyronYoung/astrbot_plugin_redalert
 astrbot_version: ">=4.5.0"
