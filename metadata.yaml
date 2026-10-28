@@ -1,0 +1,27 @@
+name: astrbot_plugin_redalert
+display_name: QQ 红包提醒
+short_desc: 白名单群出现红包时私聊提醒主人，不领取、不刷群、零 token
+desc: |
+  监听指定 QQ 群的红包消息，一旦发现红包，只私聊提醒主人，不在群里发言，也不会自动领取。
+
+  适合“群里发红包，但机器人不方便/不应该抢”的场景：主人能第一时间收到提醒，手动去抢；机器人不碰领取逻辑，不调用 LLM，零 token 成本。
+
+  特性：
+  - 支持 OneBot v11 / aiocqhttp / NapCat
+  - 白名单群监听，其他群完全忽略
+  - 优先 NapCat 私聊，失败自动回退 AstrBot 会话
+  - 同一红包 10 秒内只提醒一次
+  - 支持自定义提醒模板
+  - 提供 `/红包测试`、`/红包状态` 管理命令
+version: 1.0.0
+author: dafeiyu
+repo: https://github.com/your-name/astrbot_plugin_redalert
+astrbot_version: ">=4.5.0"
+support_platforms:
+  - aiocqhttp
+tags:
+  - 红包
+  - 提醒
+  - 通知
+  - QQ
+  - aiocqhttp

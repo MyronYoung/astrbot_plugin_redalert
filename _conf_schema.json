@@ -1,0 +1,27 @@
+{
+  "enabled": {
+    "description": "启用红包提醒",
+    "type": "bool",
+    "default": true
+  },
+  "owner_id": {
+    "description": "接收提醒的 QQ 号（单个，兼容旧配置）",
+    "type": "string",
+    "default": ""
+  },
+  "owner_ids": {
+    "description": "接收提醒的 QQ 号列表（可填多个）",
+    "type": "list",
+    "default": []
+  },
+  "watch_groups": {
+    "description": "监听的群号列表；留空则不监听任何群",
+    "type": "list",
+    "default": []
+  },
+  "notify_template": {
+    "description": "私聊提醒模板",
+    "type": "text",
+    "default": "💰 红包提醒\n群：{group_name}（{group_id}）\n发送者：{sender_name}（{sender_id}）\n时间：{time}\n快去抢！"
+  }
+}
