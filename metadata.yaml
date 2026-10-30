@@ -8,7 +8,7 @@ desc: |
 
   NapCat 用户需先运行仓库 `tools/patch_napcat_wallet.py`，把 `walletElement` 转为 JSON；否则真实红包无法识别。
 
-特性：
+  特性：
   - 支持 OneBot v11 / aiocqhttp / NapCat
   - 白名单群监听，其他群完全忽略
   - 优先 NapCat 私聊，失败自动回退 AstrBot 会话
